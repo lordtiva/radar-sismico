@@ -40,6 +40,42 @@ let pulseFrameId = null;
 
 const darkMediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
 const reducedMotionQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
+const compactQuery = window.matchMedia("(max-width: 960px), (max-height: 540px)");
+
+function setToolbarOpen(open) {
+  const toolbar = document.getElementById("main-toolbar");
+  const ctrlBtn = document.getElementById("toggle-controls-btn");
+  if (!toolbar || !ctrlBtn) return;
+  if (open && compactQuery.matches) {
+    setSidebarOpen(false);
+  }
+  toolbar.classList.toggle("open", open);
+  ctrlBtn.setAttribute("aria-expanded", String(open));
+}
+
+function setSidebarOpen(open) {
+  const sidebar = document.getElementById("radar-sidebar");
+  const sideBtn = document.getElementById("toggle-sidebar-btn");
+  if (!sidebar || !sideBtn) return;
+  if (open && compactQuery.matches) {
+    setToolbarOpen(false);
+  }
+  sidebar.classList.toggle("collapsed", !open);
+  sideBtn.setAttribute("aria-expanded", String(open));
+}
+
+function syncResponsiveMode() {
+  if (compactQuery.matches) {
+    setToolbarOpen(false);
+    setSidebarOpen(false);
+  } else {
+    setToolbarOpen(false);
+    setSidebarOpen(true);
+  }
+  if (map) {
+    requestAnimationFrame(() => map.resize());
+  }
+}
 
 async function ensureTemporal() {
   if (typeof Temporal === "undefined") {
@@ -378,6 +414,14 @@ function selectEvent(id, fly = true) {
   `;
   card.classList.remove("hidden");
 
+  if (compactQuery.matches) {
+    setSidebarOpen(true);
+    card.scrollIntoView({
+      block: "nearest",
+      behavior: reducedMotionQuery.matches ? "auto" : "smooth",
+    });
+  }
+
   document.getElementById("close-inspector-btn")?.addEventListener("click", () => {
     state.selectedId = null;
     card.classList.add("hidden");
@@ -703,9 +747,19 @@ function initMap() {
     hoverPopup.remove();
   });
 
-  map.on("click", "eq-circles", (e) => {
-    const feat = e.features?.[0];
-    if (feat) selectEvent(feat.properties.id, true);
+  map.on("click", (e) => {
+    const hasLayer = Boolean(map.getLayer("eq-circles"));
+    const feat = hasLayer
+      ? map.queryRenderedFeatures(e.point, { layers: ["eq-circles"] })?.[0]
+      : null;
+    if (feat) {
+      selectEvent(feat.properties.id, true);
+      return;
+    }
+    if (compactQuery.matches) {
+      setToolbarOpen(false);
+      setSidebarOpen(false);
+    }
   });
 
   // React to OS light/dark theme changes dynamically
@@ -762,6 +816,9 @@ function wireUIEvents() {
         });
       }
       statusEl.textContent = `Vista enfocada en ${target.label}`;
+      if (compactQuery.matches) {
+        setToolbarOpen(false);
+      }
     });
   });
 
@@ -849,13 +906,34 @@ function wireUIEvents() {
     subWrap.classList.toggle("hidden", expanded);
   });
 
-  // Mobile sidebar toggle
+  // Compact toolbar & sidebar toggles
+  const ctrlBtn = document.getElementById("toggle-controls-btn");
+  ctrlBtn?.addEventListener("click", () => {
+    const expanded = ctrlBtn.getAttribute("aria-expanded") === "true";
+    setToolbarOpen(!expanded);
+  });
+
   const sideBtn = document.getElementById("toggle-sidebar-btn");
-  const sidebar = document.getElementById("radar-sidebar");
   sideBtn?.addEventListener("click", () => {
     const expanded = sideBtn.getAttribute("aria-expanded") === "true";
-    sideBtn.setAttribute("aria-expanded", String(!expanded));
-    sidebar.classList.toggle("collapsed", expanded);
+    setSidebarOpen(!expanded);
+  });
+
+  compactQuery.addEventListener("change", syncResponsiveMode);
+  window.addEventListener("orientationchange", () => {
+    if (map) {
+      requestAnimationFrame(() => map.resize());
+    }
+  });
+  document.addEventListener("keydown", (e) => {
+    if (e.key !== "Escape" || !compactQuery.matches) return;
+    if (ctrlBtn?.getAttribute("aria-expanded") === "true") {
+      setToolbarOpen(false);
+      ctrlBtn.focus();
+    } else if (sideBtn?.getAttribute("aria-expanded") === "true") {
+      setSidebarOpen(false);
+      sideBtn.focus();
+    }
   });
 
   // Replay controls
@@ -893,6 +971,7 @@ function escapeHtml(str) {
 }
 
 async function boot() {
+  syncResponsiveMode();
   await ensureTemporal();
   installToolbarRovingFallback();
   installRangeProgressFallback();

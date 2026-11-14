@@ -44,6 +44,12 @@
 
   --radius: 14px;
   --shadow: 0 12px 36px rgba(2, 6, 23, 0.38);
+
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-right: env(safe-area-inset-right, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-left: env(safe-area-inset-left, 0px);
+  --target-size: 30px;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -91,8 +97,11 @@ body {
   margin: 0;
   padding: 0;
   width: 100%;
+  width: 100dvw;
   height: 100%;
+  height: 100dvh;
   overflow: hidden;
+  overflow-wrap: anywhere;
   font-family: system-ui, -apple-system, "Segoe UI", Roboto, Inter, sans-serif;
   color: var(--text);
 }
@@ -121,12 +130,22 @@ body {
   z-index: 0;
 }
 
+.maplibregl-ctrl-top-right {
+  top: var(--safe-top);
+  right: var(--safe-right);
+}
+
+.maplibregl-ctrl-bottom-right,
+.maplibregl-ctrl-bottom-left {
+  bottom: calc(max(10px, var(--safe-bottom)) + 64px);
+}
+
 /* Top HUD & Toolbar */
 .top-hud {
   position: fixed;
-  top: 12px;
-  left: 12px;
-  right: 58px;
+  top: max(12px, var(--safe-top));
+  left: max(12px, var(--safe-left));
+  right: calc(max(12px, var(--safe-right)) + 48px);
   z-index: 20;
   display: flex;
   flex-wrap: wrap;
@@ -148,9 +167,30 @@ body {
 
 .brand-pill {
   display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 12px;
+  padding: 8px 14px;
+}
+
+.brand-info {
+  display: flex;
   align-items: center;
   gap: 10px;
-  padding: 8px 14px;
+  min-width: 0;
+  flex: 1 1 130px;
+}
+
+.brand-text {
+  min-width: 0;
+}
+
+.hud-toggles {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
 }
 
 .live-beacon {
@@ -176,9 +216,10 @@ body {
 
 .brand-title {
   margin: 0;
-  font-size: 0.98rem;
+  font-size: clamp(0.86rem, 0.8rem + 0.38vw, 0.98rem);
   font-weight: 700;
   letter-spacing: -0.01em;
+  text-wrap: balance;
 }
 
 .brand-sub {
@@ -216,8 +257,8 @@ body {
   align-items: center;
   justify-content: center;
   gap: 6px;
-  min-inline-size: 24px;
-  min-block-size: 30px;
+  min-inline-size: var(--target-size);
+  min-block-size: var(--target-size);
   padding: 5px 10px;
   border-radius: 9px;
   border: 1px solid transparent;
@@ -229,11 +270,16 @@ body {
 }
 
 @media (pointer: coarse) {
+  :root {
+    --target-size: 44px;
+  }
   .tb-btn,
   .ghost-btn,
-  .play-btn {
-    min-inline-size: 40px;
-    min-block-size: 40px;
+  .play-btn,
+  .select-label select,
+  .check-label {
+    min-inline-size: var(--target-size);
+    min-block-size: var(--target-size);
   }
 }
 
@@ -255,7 +301,8 @@ input:focus-visible {
   }
 }
 
-.tb-btn[aria-pressed="true"] {
+.tb-btn[aria-pressed="true"],
+.hud-toggles .ghost-btn[aria-expanded="true"] {
   background: var(--accent);
   color: var(--accent-contrast);
   border-color: var(--accent);
@@ -278,9 +325,9 @@ input:focus-visible {
 /* Sidebar */
 .radar-sidebar {
   position: fixed;
-  top: 72px;
-  left: 12px;
-  bottom: 84px;
+  top: calc(max(12px, var(--safe-top)) + 64px);
+  left: max(12px, var(--safe-left));
+  bottom: calc(max(12px, var(--safe-bottom)) + 74px);
   width: min(350px, calc(100vw - 24px));
   z-index: 15;
   display: flex;
@@ -293,6 +340,7 @@ input:focus-visible {
   border-radius: var(--radius);
   box-shadow: var(--shadow);
   overflow: hidden;
+  container: sidebar / inline-size;
 }
 
 .kpi-grid {
@@ -713,22 +761,37 @@ input[type="range"] {
   display: block;
 }
 
+/* Container-responsive sidebar internals */
+@container sidebar (inline-size < 310px) {
+  .kpi-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .inspector-meta {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .inline-filters {
+    flex-wrap: wrap;
+  }
+}
+
 /* Bottom Replay Bar */
 .replay-bar {
   position: fixed;
-  left: 12px;
-  right: 12px;
-  bottom: 12px;
+  left: max(12px, var(--safe-left));
+  right: max(12px, var(--safe-right));
+  bottom: max(12px, var(--safe-bottom));
   z-index: 20;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 14px;
+  gap: 8px 14px;
   padding: 8px 14px;
   background: var(--surface);
   backdrop-filter: blur(16px);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   box-shadow: var(--shadow);
+  container: replay / inline-size;
 }
 
 .replay-controls {
@@ -752,11 +815,11 @@ input[type="range"] {
 
 .replay-track-wrap {
   position: relative;
-  flex: 1;
+  flex: 1 1 160px;
   display: flex;
   flex-direction: column;
   gap: 2px;
-  min-width: 120px;
+  min-width: 110px;
 }
 
 .timeline-histogram {
@@ -769,7 +832,7 @@ input[type="range"] {
   display: flex;
   flex-direction: column;
   align-items: flex-end;
-  min-width: 128px;
+  min-width: 112px;
   flex-shrink: 0;
   font-variant-numeric: tabular-nums;
 }
@@ -783,27 +846,151 @@ input[type="range"] {
   color: var(--muted);
 }
 
-.mobile-only {
+@container replay (inline-size < 480px) {
+  .replay-controls {
+    order: 1;
+    flex: 1 1 auto;
+  }
+  .replay-readout {
+    order: 2;
+    min-width: 0;
+  }
+  .replay-track-wrap {
+    order: 3;
+    flex: 1 1 100%;
+    min-width: 0;
+  }
+  .timeline-histogram {
+    height: 16px;
+  }
+}
+
+.compact-only {
   display: none;
 }
 
-@media (max-width: 960px) {
+/* Compact screens: portrait mobile, small tablets, and landscape mobile */
+@media (max-width: 960px), (max-height: 540px) {
   .subduction-panel {
     display: none;
   }
-  .mobile-only {
+  .compact-only {
     display: inline-flex;
+  }
+  .tb-sep {
+    display: none;
+  }
+  .top-hud {
+    align-items: flex-start;
+  }
+  .brand-pill {
+    width: 100%;
+    padding: 6px 10px;
+  }
+  .hud-toolbar {
+    display: none;
+    width: 100%;
+    max-height: calc(100dvh - max(12px, var(--safe-top)) - max(12px, var(--safe-bottom)) - 170px);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding: 10px;
+    gap: 8px;
+  }
+  .hud-toolbar.open {
+    display: flex;
+  }
+  .toolbar-group {
+    width: 100%;
+    gap: 6px;
   }
   .radar-sidebar {
     top: auto;
-    bottom: 84px;
-    max-height: 55vh;
+    left: max(12px, var(--safe-left));
+    right: max(12px, var(--safe-right));
+    bottom: calc(max(12px, var(--safe-bottom)) + 76px);
+    width: auto;
+    max-height: min(60dvh, calc(100dvh - max(12px, var(--safe-top)) - max(12px, var(--safe-bottom)) - 160px));
+    overflow-y: auto;
+    overscroll-behavior: contain;
   }
   .radar-sidebar.collapsed {
     display: none;
   }
-  .replay-readout {
-    min-width: 95px;
+  .feed-section {
+    flex: none;
+  }
+  .event-list {
+    overflow-y: visible;
+    scrollbar-gutter: auto;
+  }
+}
+
+/* Portrait phones where .replay-bar wraps to 2 rows */
+@media (max-width: 560px) {
+  .top-hud {
+    top: max(8px, var(--safe-top));
+    left: max(8px, var(--safe-left));
+    right: calc(max(8px, var(--safe-right)) + 48px);
+    gap: 8px;
+  }
+  .replay-bar {
+    left: max(8px, var(--safe-left));
+    right: max(8px, var(--safe-right));
+    bottom: max(8px, var(--safe-bottom));
+    padding: 8px 10px;
+    gap: 6px 10px;
+  }
+  .radar-sidebar {
+    left: max(8px, var(--safe-left));
+    right: max(8px, var(--safe-right));
+    bottom: calc(max(8px, var(--safe-bottom)) + 114px);
+    max-height: min(58dvh, calc(100dvh - max(8px, var(--safe-top)) - max(8px, var(--safe-bottom)) - 196px));
+  }
+  .maplibregl-ctrl-bottom-right,
+  .maplibregl-ctrl-bottom-left {
+    bottom: calc(max(8px, var(--safe-bottom)) + 108px);
+  }
+}
+
+/* Landscape mobile / short viewports: keep top & bottom slim and dock sidebar on left */
+@media (max-height: 540px) {
+  .top-hud {
+    top: max(8px, var(--safe-top));
+    left: max(8px, var(--safe-left));
+    right: calc(max(8px, var(--safe-right)) + 48px);
+    gap: 6px;
+  }
+  .brand-pill {
+    width: auto;
+    max-width: 100%;
+    padding: 5px 10px;
+    gap: 6px 10px;
+  }
+  .hud-toolbar.open {
+    width: min(580px, 100%);
+    max-height: calc(100dvh - max(8px, var(--safe-top)) - max(8px, var(--safe-bottom)) - 134px);
+  }
+  .replay-bar {
+    left: max(8px, var(--safe-left));
+    right: max(8px, var(--safe-right));
+    bottom: max(8px, var(--safe-bottom));
+    padding: 5px 10px;
+    gap: 6px 10px;
+  }
+  .timeline-histogram {
+    height: 14px;
+  }
+  .radar-sidebar {
+    top: calc(max(8px, var(--safe-top)) + 70px);
+    bottom: calc(max(8px, var(--safe-bottom)) + 70px);
+    left: max(8px, var(--safe-left));
+    right: auto;
+    width: min(360px, 52dvw);
+    max-height: none;
+  }
+  .maplibregl-ctrl-bottom-right,
+  .maplibregl-ctrl-bottom-left {
+    bottom: calc(max(8px, var(--safe-bottom)) + 64px);
   }
 }
 

@@ -2,7 +2,7 @@
 <html lang="es-AR">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <meta name="color-scheme" content="dark light">
   <title>Radar Sísmico Argentina · INPRES en Tiempo Real</title>
   <link rel="preconnect" href="https://unpkg.com">
@@ -15,14 +15,21 @@
   <!-- Top Header + Accessible Toolbar -->
   <header class="top-hud">
     <div class="brand-pill">
-      <span class="live-beacon" aria-hidden="true"></span>
-      <div>
-        <h1 class="brand-title">Radar Sísmico Argentina</h1>
-        <p class="brand-sub" id="sync-status">Sincronizando con INPRES…</p>
+      <div class="brand-info">
+        <span class="live-beacon" aria-hidden="true"></span>
+        <div class="brand-text">
+          <h1 class="brand-title">Radar Sísmico Argentina</h1>
+          <p class="brand-sub" id="sync-status">Sincronizando con INPRES…</p>
+        </div>
       </div>
-      <button type="button" id="toggle-sidebar-btn" class="ghost-btn mobile-only" aria-expanded="true" aria-controls="radar-sidebar">
-        Panel
-      </button>
+      <div class="hud-toggles compact-only">
+        <button type="button" id="toggle-controls-btn" class="ghost-btn" aria-expanded="false" aria-controls="main-toolbar">
+          Capas
+        </button>
+        <button type="button" id="toggle-sidebar-btn" class="ghost-btn" aria-expanded="false" aria-controls="radar-sidebar">
+          Panel
+        </button>
+      </div>
     </div>
 
     <div role="toolbar" focusgroup="toolbar wrap" aria-label="Controles del mapa y regiones" aria-controls="map" class="hud-toolbar" id="main-toolbar">
