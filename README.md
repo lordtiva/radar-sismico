@@ -34,10 +34,19 @@ npm run dev
    ```
 2. Crear la base D1 y aplicar el esquema (o dejar que `cf deploy` aprovisione automáticamente):
    ```bash
-   cf d1 create sismos-argentina-db
-   cf d1 migrations apply <DATABASE_ID> --remote
+   cf d1 create --name sismos-argentina-db
+   cf d1 migrations apply <DATABASE_ID>
    ```
 3. Desplegar:
    ```bash
-   npm run deploy
+   cf deploy
    ```
+
+## Fuentes de datos y atribución
+
+- **Datos sísmicos:** obtenidos de las fuentes públicas del [Instituto Nacional de Prevención Sísmica (INPRES)](https://www.inpres.gob.ar/). Este proyecto es una visualización independiente no oficial y no sustituye los canales de alerta oficiales.
+- **Mapas y relieve:** renderizado con **MapLibre GL JS**, mapas base de **CARTO** y elevación DEM de **AWS Terrain Tiles (Terrarium)**, sujetos a sus respectivos términos de uso.
+
+## Licencia
+
+El código fuente de este proyecto se distribuye bajo la licencia [MIT](LICENSE). La licencia aplica únicamente al código y no a los datos o servicios externos mencionados arriba.
