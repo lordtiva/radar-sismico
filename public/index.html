@@ -4,7 +4,52 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <meta name="color-scheme" content="dark light">
-  <title>Radar Sísmico Argentina · INPRES en Tiempo Real</title>
+  <title>Radar Sísmico Argentina · Sismos INPRES en Tiempo Real</title>
+  <meta name="description" content="Mapa interactivo en tiempo real de los sismos en Argentina según datos oficiales del INPRES. Relieve 3D de los Andes, perfil de subducción, Modo Replay, estadísticas por provincia y descarga CSV/GeoJSON.">
+  <meta name="robots" content="index, follow, max-image-preview:large">
+  <meta name="theme-color" content="#0b101c" media="(prefers-color-scheme: dark)">
+  <meta name="theme-color" content="#f8fafc" media="(prefers-color-scheme: light)">
+
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+  <link rel="manifest" href="/site.webmanifest">
+  <link rel="canonical" href="/">
+
+  <!-- Open Graph (Facebook, WhatsApp, Discord, LinkedIn, Telegram) -->
+  <meta property="og:type" content="website">
+  <meta property="og:locale" content="es_AR">
+  <meta property="og:site_name" content="Radar Sísmico Argentina">
+  <meta property="og:title" content="Radar Sísmico Argentina · Sismos INPRES en Tiempo Real">
+  <meta property="og:description" content="Seguí los últimos sismos y temblores en Argentina con datos del INPRES: relieve 3D de los Andes, perfil de subducción, Modo Replay de enjambres, estadísticas por provincia y descarga CSV/GeoJSON.">
+  <meta property="og:url" content="/">
+  <meta property="og:image" content="/og-image.png">
+  <meta property="og:image:type" content="image/png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:alt" content="Radar Sísmico Argentina: mapa interactivo de sismos del INPRES con vista 3D de los Andes y perfil de subducción">
+
+  <!-- Twitter / X Card -->
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Radar Sísmico Argentina · Sismos INPRES en Tiempo Real">
+  <meta name="twitter:description" content="Mapa interactivo de sismos en Argentina con datos del INPRES: relieve 3D de los Andes, perfil de subducción, Modo Replay, estadísticas por provincia y exportación CSV/GeoJSON.">
+  <meta name="twitter:image" content="/og-image.png">
+  <meta name="twitter:image:alt" content="Radar Sísmico Argentina: mapa interactivo de sismos del INPRES con vista 3D de los Andes y perfil de subducción">
+
+  <script type="application/ld+json" id="ld-json">
+    {
+      "@context": "https://schema.org",
+      "@type": "WebApplication",
+      "name": "Radar Sísmico Argentina",
+      "alternateName": "Radar Sísmico Argentina INPRES",
+      "description": "Mapa interactivo en tiempo real de los sismos registrados en Argentina por el INPRES, con relieve 3D de los Andes, perfil de subducción, Modo Replay e historial descargable en CSV y GeoJSON.",
+      "url": "/",
+      "inLanguage": "es-AR",
+      "applicationCategory": "UtilitiesApplication",
+      "operatingSystem": "All",
+      "isAccessibleForFree": true,
+      "image": "/og-image.png"
+    }
+  </script>
+
   <link rel="preconnect" href="https://unpkg.com">
   <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css">
   <link rel="stylesheet" href="/css/styles.css">
@@ -207,6 +252,16 @@
     </div>
   </dialog>
 
+  <noscript>
+    <section aria-label="Información del sitio">
+      <p>
+        Radar Sísmico Argentina muestra en tiempo real los sismos y temblores registrados en Argentina
+        a partir de los datos públicos del Instituto Nacional de Prevención Sísmica (INPRES), con relieve 3D
+        de la Cordillera de los Andes, perfil de subducción Oeste-Este, Modo Replay de enjambres sísmicos,
+        estadísticas por provincia y exportación en CSV y GeoJSON. Activá JavaScript para ver el mapa interactivo.
+      </p>
+    </section>
+  </noscript>
   <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
   <script type="module" src="/js/app.js"></script>
 </body>

@@ -8,6 +8,12 @@ import {
 	type QueryFilters,
 } from "./db.ts";
 import { fetchInpresFeeds, toCsv, toGeoJSON } from "./inpres.ts";
+import {
+	buildRobotsTxt,
+	buildSitemapXml,
+	resolvePublicOrigin,
+	rewriteSeoHtml,
+} from "./seo.ts";
 
 const REFRESH_COOLDOWN_MS = 15_000;
 
@@ -92,7 +98,51 @@ async function ensureBootstrapped(db: D1Database) {
 export default {
 	async fetch(request: Request, env: Cloudflare.Env): Promise<Response> {
 		const url = new URL(request.url);
+		const isGetOrHead = request.method === "GET" || request.method === "HEAD";
+		const publicOrigin = resolvePublicOrigin(url);
 		try {
+			if (url.pathname === "/robots.txt" && isGetOrHead) {
+				return new Response(
+					request.method === "HEAD" ? null : buildRobotsTxt(publicOrigin),
+					{
+						status: 200,
+						headers: {
+							"Content-Type": "text/plain; charset=utf-8",
+							"Cache-Control": "public, max-age=3600",
+						},
+					},
+				);
+			}
+
+			if (url.pathname === "/sitemap.xml" && isGetOrHead) {
+				await ensureSchema(env.DB);
+				const meta = await getSyncMeta(env.DB);
+				const lastmod = meta.lastSyncAt ? meta.lastSyncAt.slice(0, 10) : undefined;
+				return new Response(
+					request.method === "HEAD" ? null : buildSitemapXml(publicOrigin, lastmod),
+					{
+						status: 200,
+						headers: {
+							"Content-Type": "application/xml; charset=utf-8",
+							"Cache-Control": "public, max-age=3600",
+						},
+					},
+				);
+			}
+
+			if ((url.pathname === "/" || url.pathname === "/index.html") && isGetOrHead) {
+				const assetRes = await env.ASSETS.fetch(request);
+				const contentType = assetRes.headers.get("content-type") ?? "";
+				if (
+					request.method === "GET" &&
+					assetRes.ok &&
+					contentType.includes("text/html")
+				) {
+					return rewriteSeoHtml(assetRes, publicOrigin);
+				}
+				return assetRes;
+			}
+
 			if (url.pathname === "/api/health" && request.method === "GET") {
 				await ensureSchema(env.DB);
 				const meta = await getSyncMeta(env.DB);

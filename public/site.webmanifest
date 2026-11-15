@@ -1,0 +1,18 @@
+{
+  "name": "Radar Sísmico Argentina",
+  "short_name": "Radar Sísmico",
+  "description": "Mapa interactivo en tiempo real de los sismos en Argentina según datos oficiales del INPRES.",
+  "lang": "es-AR",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0b101c",
+  "theme_color": "#0b101c",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}

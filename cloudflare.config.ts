@@ -8,9 +8,10 @@ export default defineConfig({
 		compatibilityFlags: ["nodejs_compat"],
 		entrypoint,
 		assets: {
-			runWorkerFirst: ["/api/*"],
+			runWorkerFirst: ["/api/*", "/", "/index.html", "/robots.txt", "/sitemap.xml"],
 		},
 		env: {
+			ASSETS: bindings.assets(),
 			DB: bindings.d1({ name: "sismos-argentina-db" }),
 		},
 		triggers: [
