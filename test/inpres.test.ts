@@ -6,6 +6,7 @@ import {
 	parseIdTimestamp,
 	parseSentidosXml,
 	parseSismosXml,
+	toCsv,
 	toGeoJSON,
 } from "../src/inpres.ts";
 
@@ -97,4 +98,31 @@ test("parseSismosXml, parseSentidosXml, mergeEvents, and mojibake fix", () => {
 	assert.equal(geo.type, "FeatureCollection");
 	assert.equal(geo.features.length, 3);
 	assert.deepEqual(geo.features[0].geometry.coordinates, [-66.77, -27.84]);
+});
+
+test("toCsv produces UTF-8 BOM RFC-4180 CSV and neutralizes formula triggers", () => {
+	const csv = toCsv([
+		{
+			id: "20261114055031",
+			occurred_at: "2026-11-14T05:50:31Z",
+			local_date: "14/11",
+			local_time: "02:50",
+			lat: -27.84,
+			lon: -66.77,
+			depth_km: 184,
+			magnitude: 3.4,
+			province: 'CATAMARCA, "N"',
+			status: "preliminar",
+			felt: false,
+			epiczone: "=SUM(A1:A2)",
+			intensity: null,
+			detail_url: "https://www.inpres.gob.ar/desktop/epicentro1.php?s=20261114055031",
+			source: "sismos",
+		},
+	]);
+
+	assert.ok(csv.startsWith("\uFEFFid,occurred_at,"));
+	assert.ok(csv.includes("-27.84,-66.77"));
+	assert.ok(csv.includes('"CATAMARCA, ""N"""'));
+	assert.ok(csv.includes("'=SUM(A1:A2)"));
 });

@@ -282,3 +282,62 @@ export function toGeoJSON(events: EarthquakeEvent[]) {
 		})),
 	};
 }
+
+function escapeCsvCell(value: string | number | boolean | null | undefined): string {
+	if (value === null || value === undefined) return "";
+	if (typeof value === "number" || typeof value === "boolean") {
+		return String(value);
+	}
+	let str = String(value);
+	// Neutralize spreadsheet formula triggers on untrusted text fields
+	if (/^[=+\-@\t\r]/.test(str)) {
+		str = `'${str}`;
+	}
+	if (/[",\r\n]/.test(str)) {
+		return `"${str.replaceAll('"', '""')}"`;
+	}
+	return str;
+}
+
+export function toCsv(events: EarthquakeEvent[]): string {
+	const header = [
+		"id",
+		"occurred_at",
+		"local_date",
+		"local_time",
+		"magnitude",
+		"depth_km",
+		"lat",
+		"lon",
+		"province",
+		"status",
+		"felt",
+		"intensity",
+		"epiczone",
+		"detail_url",
+		"source",
+	].join(",");
+
+	const rows = events.map((ev) =>
+		[
+			escapeCsvCell(ev.id),
+			escapeCsvCell(ev.occurred_at),
+			escapeCsvCell(ev.local_date),
+			escapeCsvCell(ev.local_time),
+			escapeCsvCell(ev.magnitude),
+			escapeCsvCell(ev.depth_km),
+			escapeCsvCell(ev.lat),
+			escapeCsvCell(ev.lon),
+			escapeCsvCell(ev.province),
+			escapeCsvCell(ev.status),
+			escapeCsvCell(ev.felt ? 1 : 0),
+			escapeCsvCell(ev.intensity),
+			escapeCsvCell(ev.epiczone),
+			escapeCsvCell(ev.detail_url),
+			escapeCsvCell(ev.source),
+		].join(","),
+	);
+
+	// UTF-8 BOM ensures Excel opens Spanish accents cleanly
+	return `\uFEFF${[header, ...rows].join("\r\n")}\r\n`;
+}

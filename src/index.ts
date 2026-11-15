@@ -1,11 +1,13 @@
 import {
 	ensureSchema,
+	getStats,
 	getSyncMeta,
 	queryEvents,
 	saveSyncMeta,
 	upsertEvents,
+	type QueryFilters,
 } from "./db.ts";
-import { fetchInpresFeeds, toGeoJSON } from "./inpres.ts";
+import { fetchInpresFeeds, toCsv, toGeoJSON } from "./inpres.ts";
 
 const REFRESH_COOLDOWN_MS = 15_000;
 
@@ -57,6 +59,36 @@ function jsonResponse(data: unknown, status = 200, cacheSeconds = 0): Response {
 	return new Response(JSON.stringify(data), { status, headers });
 }
 
+function parseFilters(params: URLSearchParams, defaultLimit = 500): QueryFilters {
+	const daysRaw = params.get("days");
+	const minMagRaw = params.get("min_mag");
+	const feltOnly = params.get("felt_only") === "true";
+	const province = params.get("province") ?? undefined;
+	const limitRaw = params.get("limit");
+
+	const days = daysRaw ? Number.parseInt(daysRaw, 10) : undefined;
+	const minMag = minMagRaw ? Number.parseFloat(minMagRaw) : undefined;
+	const limit = limitRaw ? Number.parseInt(limitRaw, 10) : defaultLimit;
+
+	return {
+		days: days && Number.isFinite(days) && days > 0 ? days : undefined,
+		minMag: minMag !== undefined && Number.isFinite(minMag) ? minMag : undefined,
+		feltOnly,
+		province: province && province.trim() ? province.trim() : undefined,
+		limit: Number.isFinite(limit) ? limit : defaultLimit,
+	};
+}
+
+async function ensureBootstrapped(db: D1Database) {
+	await ensureSchema(db);
+	let meta = await getSyncMeta(db);
+	if (!meta.lastSyncAt) {
+		await syncInpres(db, true);
+		meta = await getSyncMeta(db);
+	}
+	return meta;
+}
+
 export default {
 	async fetch(request: Request, env: Cloudflare.Env): Promise<Response> {
 		const url = new URL(request.url);
@@ -77,32 +109,9 @@ export default {
 			}
 
 			if (url.pathname === "/api/earthquakes" && request.method === "GET") {
-				await ensureSchema(env.DB);
-				let meta = await getSyncMeta(env.DB);
-
-				// Cold bootstrap: sync immediately if D1 has never synced yet
-				if (!meta.lastSyncAt) {
-					await syncInpres(env.DB, true);
-					meta = await getSyncMeta(env.DB);
-				}
-
-				const daysRaw = url.searchParams.get("days");
-				const minMagRaw = url.searchParams.get("min_mag");
-				const feltOnly = url.searchParams.get("felt_only") === "true";
-				const province = url.searchParams.get("province") ?? undefined;
-				const limitRaw = url.searchParams.get("limit");
-
-				const days = daysRaw ? Number.parseInt(daysRaw, 10) : undefined;
-				const minMag = minMagRaw ? Number.parseFloat(minMagRaw) : undefined;
-				const limit = limitRaw ? Number.parseInt(limitRaw, 10) : 500;
-
-				const events = await queryEvents(env.DB, {
-					days: days && Number.isFinite(days) ? days : undefined,
-					minMag: minMag !== undefined && Number.isFinite(minMag) ? minMag : undefined,
-					feltOnly,
-					province,
-					limit: Number.isFinite(limit) ? limit : 500,
-				});
+				const meta = await ensureBootstrapped(env.DB);
+				const filters = parseFilters(url.searchParams, 500);
+				const events = await queryEvents(env.DB, filters);
 
 				const cutoff24h = new Date(Date.now() - 86_400_000)
 					.toISOString()
@@ -136,6 +145,62 @@ export default {
 				};
 
 				return jsonResponse(payload, 200, 30);
+			}
+
+			if (url.pathname === "/api/stats" && request.method === "GET") {
+				const meta = await ensureBootstrapped(env.DB);
+				const filters = parseFilters(url.searchParams);
+				const stats = await getStats(env.DB, filters);
+
+				return jsonResponse(
+					{
+						...stats,
+						metadata: {
+							last_sync_at: meta.lastSyncAt,
+							warnings: meta.warnings,
+							filters: {
+								days: filters.days ?? null,
+								min_mag: filters.minMag ?? null,
+								felt_only: Boolean(filters.feltOnly),
+								province: filters.province ?? null,
+							},
+						},
+					},
+					200,
+					60,
+				);
+			}
+
+			if (url.pathname === "/api/export" && request.method === "GET") {
+				await ensureBootstrapped(env.DB);
+				const format = (url.searchParams.get("format") ?? "csv").toLowerCase();
+				if (format !== "csv" && format !== "geojson") {
+					return jsonResponse({ error: "Unsupported format. Use csv or geojson." }, 400);
+				}
+
+				const filters = parseFilters(url.searchParams, 10_000);
+				const events = await queryEvents(env.DB, filters);
+				const stamp = new Date().toISOString().slice(0, 10);
+
+				if (format === "geojson") {
+					return new Response(JSON.stringify(toGeoJSON(events), null, 2), {
+						status: 200,
+						headers: {
+							"Content-Type": "application/geo+json; charset=utf-8",
+							"Content-Disposition": `attachment; filename="sismos-argentina-${stamp}.geojson"`,
+							"Cache-Control": "no-store",
+						},
+					});
+				}
+
+				return new Response(toCsv(events), {
+					status: 200,
+					headers: {
+						"Content-Type": "text/csv; charset=utf-8",
+						"Content-Disposition": `attachment; filename="sismos-argentina-${stamp}.csv"`,
+						"Cache-Control": "no-store",
+					},
+				});
 			}
 
 			return jsonResponse({ error: "Not found" }, 404);

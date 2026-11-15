@@ -26,6 +26,8 @@ const state = {
   visibleFeatures: [],
   colorMode: "depth",
   is3D: false,
+  isHeatmap: false,
+  provinceFilter: null,
   selectedId: null,
   replayPlaying: false,
   replaySpeed: 1,
@@ -42,6 +44,36 @@ const darkMediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
 const reducedMotionQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
 const compactQuery = window.matchMedia("(max-width: 960px), (max-height: 540px)");
 
+function updateHudOffsets() {
+  const topHud = document.querySelector(".top-hud");
+  const replayBar = document.querySelector(".replay-bar");
+  const rootStyle = document.documentElement.style;
+  if (topHud) {
+    const rect = topHud.getBoundingClientRect();
+    if (rect.height > 0) {
+      rootStyle.setProperty("--sidebar-top", `${Math.ceil(rect.bottom + 10)}px`);
+    }
+  }
+  if (replayBar) {
+    const rect = replayBar.getBoundingClientRect();
+    if (rect.height > 0) {
+      rootStyle.setProperty("--replay-clearance", `${Math.ceil(window.innerHeight - rect.top + 10)}px`);
+    }
+  }
+}
+
+function installHudLayoutObserver() {
+  updateHudOffsets();
+  if (typeof ResizeObserver !== "undefined") {
+    const ro = new ResizeObserver(updateHudOffsets);
+    const topHud = document.querySelector(".top-hud");
+    const replayBar = document.querySelector(".replay-bar");
+    if (topHud) ro.observe(topHud);
+    if (replayBar) ro.observe(replayBar);
+  }
+  window.addEventListener("resize", updateHudOffsets, { passive: true });
+}
+
 function setToolbarOpen(open) {
   const toolbar = document.getElementById("main-toolbar");
   const ctrlBtn = document.getElementById("toggle-controls-btn");
@@ -51,6 +83,7 @@ function setToolbarOpen(open) {
   }
   toolbar.classList.toggle("open", open);
   ctrlBtn.setAttribute("aria-expanded", String(open));
+  updateHudOffsets();
 }
 
 function setSidebarOpen(open) {
@@ -62,6 +95,7 @@ function setSidebarOpen(open) {
   }
   sidebar.classList.toggle("collapsed", !open);
   sideBtn.setAttribute("aria-expanded", String(open));
+  updateHudOffsets();
 }
 
 function syncResponsiveMode() {
@@ -72,6 +106,7 @@ function syncResponsiveMode() {
     setToolbarOpen(false);
     setSidebarOpen(true);
   }
+  updateHudOffsets();
   if (map) {
     requestAnimationFrame(() => map.resize());
   }
@@ -212,15 +247,80 @@ function installRangeProgressFallback() {
   });
 }
 
-async function fetchData() {
-  const days = document.getElementById("days-select").value;
+function buildFilterParams({ includeProvince = true, daysOverride = undefined } = {}) {
+  const days = daysOverride !== undefined ? daysOverride : document.getElementById("days-select").value;
   const minMag = document.getElementById("min-mag-range").value;
   const feltOnly = document.getElementById("felt-only-check").checked;
 
-  const params = new URLSearchParams({ limit: "500" });
+  const params = new URLSearchParams();
   if (days) params.set("days", days);
-  if (Number(minMag) > 0) params.set("min_mag", minMag);
-  if (feltOnly) params.set("felt_only", "true");
+  if (daysOverride === undefined) {
+    if (Number(minMag) > 0) params.set("min_mag", minMag);
+    if (feltOnly) params.set("felt_only", "true");
+    if (includeProvince && state.provinceFilter) params.set("province", state.provinceFilter);
+  }
+  return params;
+}
+
+function syncExportLinks() {
+  const feedParams = buildFilterParams();
+  const csvFeed = document.getElementById("export-feed-csv");
+  const geoFeed = document.getElementById("export-feed-geojson");
+  if (csvFeed) {
+    const p = new URLSearchParams(feedParams);
+    p.set("format", "csv");
+    csvFeed.href = `/api/export?${p.toString()}`;
+  }
+  if (geoFeed) {
+    const p = new URLSearchParams(feedParams);
+    p.set("format", "geojson");
+    geoFeed.href = `/api/export?${p.toString()}`;
+  }
+
+  const statsDays = document.getElementById("stats-days-select")?.value ?? "";
+  const statsParams = buildFilterParams({ includeProvince: false, daysOverride: statsDays });
+  const csvStats = document.getElementById("export-stats-csv");
+  const geoStats = document.getElementById("export-stats-geojson");
+  if (csvStats) {
+    const p = new URLSearchParams(statsParams);
+    p.set("format", "csv");
+    csvStats.href = `/api/export?${p.toString()}`;
+  }
+  if (geoStats) {
+    const p = new URLSearchParams(statsParams);
+    p.set("format", "geojson");
+    geoStats.href = `/api/export?${p.toString()}`;
+  }
+}
+
+function setProvinceFilter(province, fitToMatches = false) {
+  state.provinceFilter = province || null;
+  const chip = document.getElementById("province-filter-chip");
+  const label = document.getElementById("province-filter-label");
+  if (chip && label) {
+    chip.classList.toggle("hidden", !state.provinceFilter);
+    label.textContent = state.provinceFilter || "";
+  }
+  syncExportLinks();
+  return fetchData().then(() => {
+    if (fitToMatches && map && state.allFeatures.length) {
+      const bounds = new maplibregl.LngLatBounds();
+      state.allFeatures.forEach((f) => bounds.extend(f.geometry.coordinates));
+      if (!bounds.isEmpty()) {
+        map.fitBounds(bounds, {
+          padding: 72,
+          maxZoom: 7.2,
+          duration: reducedMotionQuery.matches ? 0 : 900,
+        });
+      }
+    }
+  });
+}
+
+async function fetchData() {
+  const params = buildFilterParams();
+  params.set("limit", "500");
+  syncExportLinks();
 
   const res = await fetch(`/api/earthquakes?${params.toString()}`);
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -635,6 +735,31 @@ function addMapSourcesAndLayers() {
     });
 
     map.addLayer({
+      id: "eq-heatmap",
+      type: "heatmap",
+      source: "earthquakes",
+      layout: {
+        visibility: state.isHeatmap ? "visible" : "none",
+      },
+      paint: {
+        "heatmap-weight": ["interpolate", ["linear"], ["get", "magnitude"], 1.5, 0.25, 4.0, 0.8, 6.5, 1],
+        "heatmap-intensity": ["interpolate", ["linear"], ["zoom"], 3, 1.1, 8, 2.2],
+        "heatmap-color": [
+          "interpolate",
+          ["linear"],
+          ["heatmap-density"],
+          0, "rgba(56, 189, 248, 0)",
+          0.2, "rgba(56, 189, 248, 0.45)",
+          0.45, "rgba(245, 158, 11, 0.65)",
+          0.7, "rgba(239, 68, 68, 0.82)",
+          1, "rgba(190, 18, 60, 0.95)",
+        ],
+        "heatmap-radius": ["interpolate", ["linear"], ["zoom"], 3, 18, 8, 34],
+        "heatmap-opacity": 0.85,
+      },
+    });
+
+    map.addLayer({
       id: "eq-circles",
       type: "circle",
       source: "earthquakes",
@@ -650,7 +775,9 @@ function addMapSourcesAndLayers() {
           7.5, 36,
         ],
         "circle-color": getMagColorExpr(),
-        "circle-opacity": 0.88,
+        "circle-opacity": state.isHeatmap
+          ? ["interpolate", ["linear"], ["zoom"], 4, 0.24, 8, 0.88]
+          : 0.88,
         "circle-stroke-width": ["case", ["==", ["get", "felt"], true], 2, 1],
         "circle-stroke-color": "#ffffff",
       },
@@ -691,6 +818,20 @@ function startPulseAnimation() {
     pulseFrameId = requestAnimationFrame(animate);
   };
   pulseFrameId = requestAnimationFrame(animate);
+}
+
+function applyHeatmapState() {
+  if (!map) return;
+  if (map.getLayer("eq-heatmap")) {
+    map.setLayoutProperty("eq-heatmap", "visibility", state.isHeatmap ? "visible" : "none");
+  }
+  if (map.getLayer("eq-circles")) {
+    map.setPaintProperty(
+      "eq-circles",
+      "circle-opacity",
+      state.isHeatmap ? ["interpolate", ["linear"], ["zoom"], 4, 0.24, 8, 0.88] : 0.88
+    );
+  }
 }
 
 function updateLayerColors() {
@@ -836,6 +977,15 @@ function wireUIEvents() {
     });
   });
 
+  // Heatmap toggle
+  const heatmapBtn = document.getElementById("toggle-heatmap-btn");
+  heatmapBtn?.addEventListener("click", () => {
+    state.isHeatmap = !state.isHeatmap;
+    heatmapBtn.setAttribute("aria-pressed", String(state.isHeatmap));
+    applyHeatmapState();
+    statusEl.textContent = state.isHeatmap ? "Mapa de calor activado" : "Mapa de calor desactivado";
+  });
+
   // 3D terrain & pitch toggle
   const btn3D = document.getElementById("toggle-3d-btn");
   btn3D.addEventListener("click", () => {
@@ -883,6 +1033,20 @@ function wireUIEvents() {
   minMagRange.addEventListener("change", () => fetchData().catch(console.error));
   document.getElementById("days-select").addEventListener("change", () => fetchData().catch(console.error));
   document.getElementById("felt-only-check").addEventListener("change", () => fetchData().catch(console.error));
+  document.getElementById("clear-province-btn")?.addEventListener("click", () => {
+    setProvinceFilter(null, false).catch(console.error);
+  });
+
+  // Stats dialog triggers and controls
+  document.getElementById("open-stats-btn")?.addEventListener("click", () => {
+    if (compactQuery.matches) setToolbarOpen(false);
+    openStatsModal();
+  });
+  document.getElementById("stats-days-select")?.addEventListener("change", () => {
+    syncExportLinks();
+    fetchAndRenderStats().catch(console.error);
+  });
+  installStatsDialogHandlers();
 
   // Event list click
   document.getElementById("event-list").addEventListener("click", (e) => {
@@ -927,6 +1091,7 @@ function wireUIEvents() {
   });
   document.addEventListener("keydown", (e) => {
     if (e.key !== "Escape" || !compactQuery.matches) return;
+    if (document.getElementById("stats-dialog")?.open) return;
     if (ctrlBtn?.getAttribute("aria-expanded") === "true") {
       setToolbarOpen(false);
       ctrlBtn.focus();
@@ -962,6 +1127,328 @@ function wireUIEvents() {
   });
 }
 
+let supportsDisplayTransition;
+function canTransitionDisplay() {
+  if (supportsDisplayTransition !== undefined) return supportsDisplayTransition;
+  if (!window.CSS?.supports?.("transition-behavior", "allow-discrete") || !document.body) {
+    return false;
+  }
+  const probe = document.createElement("div");
+  probe.style.cssText = "transition: display 1s allow-discrete !important; display: block;";
+  document.body.appendChild(probe);
+  getComputedStyle(probe).display;
+  probe.style.display = "none";
+  supportsDisplayTransition = getComputedStyle(probe).display === "block";
+  probe.remove();
+  return supportsDisplayTransition;
+}
+
+function supportsTopLayerExit() {
+  return Boolean(window.CSS?.supports?.("overlay", "auto") && canTransitionDisplay());
+}
+
+async function closeTopLayer(dialog) {
+  if (!dialog?.open) return;
+  if (!supportsTopLayerExit()) {
+    dialog.setAttribute("data-closing", "");
+    const animations = dialog.getAnimations({ subtree: true });
+    if (animations.length > 0) {
+      await Promise.race([
+        Promise.allSettled(animations.map((a) => a.finished)),
+        new Promise((r) => setTimeout(r, 1000)),
+      ]);
+    }
+    if (!dialog.hasAttribute("data-closing")) return;
+    dialog.removeAttribute("data-closing");
+  }
+  dialog.close();
+}
+
+function installStatsDialogHandlers() {
+  const dialog = document.getElementById("stats-dialog");
+  if (!dialog) return;
+
+  document.getElementById("stats-close-btn")?.addEventListener("click", () => {
+    closeTopLayer(dialog);
+  });
+
+  dialog.addEventListener("cancel", (event) => {
+    if (!supportsTopLayerExit() && event.cancelable) {
+      event.preventDefault();
+      closeTopLayer(dialog);
+    }
+  });
+
+  if (!("closedBy" in HTMLDialogElement.prototype)) {
+    const outside = (e) => {
+      const r = dialog.getBoundingClientRect();
+      return e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom;
+    };
+    let pressedOutside = false;
+    dialog.addEventListener("pointerdown", (e) => {
+      pressedOutside = outside(e);
+    });
+    dialog.addEventListener("pointerup", (e) => {
+      if (pressedOutside && outside(e)) closeTopLayer(dialog);
+    });
+  }
+}
+
+function openStatsModal() {
+  const dialog = document.getElementById("stats-dialog");
+  if (!dialog) return;
+  dialog.removeAttribute("data-closing");
+  syncExportLinks();
+  if (!dialog.open) {
+    dialog.showModal();
+  }
+  fetchAndRenderStats().catch((err) => {
+    const body = document.getElementById("stats-body");
+    if (body) {
+      body.innerHTML = `<p class="stats-loading">No se pudieron cargar las estadísticas: ${escapeHtml(err.message)}</p>`;
+    }
+  });
+}
+
+function formatDayShort(isoDate) {
+  const parts = String(isoDate || "").split("-");
+  return parts.length === 3 ? `${parts[2]}/${parts[1]}` : isoDate;
+}
+
+function formatArchiveDate(isoStr) {
+  if (!isoStr) return "hoy";
+  return new Date(isoStr).toLocaleDateString("es-AR", {
+    timeZone: "America/Argentina/Buenos_Aires",
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+  });
+}
+
+function renderRecordCard(label, item, valueText, subText) {
+  if (!item) {
+    return `
+      <div class="stat-record-card">
+        <span class="stat-record-label">${escapeHtml(label)}</span>
+        <strong class="stat-record-value">—</strong>
+        <span class="stat-record-sub">Sin datos en el rango</span>
+      </div>
+    `;
+  }
+  return `
+    <button type="button" class="stat-record-card" data-jump-id="${escapeHtml(item.id)}" data-lon="${item.lon}" data-lat="${item.lat}" title="Ubicar este sismo en el mapa">
+      <span class="stat-record-label">${escapeHtml(label)}</span>
+      <strong class="stat-record-value">${escapeHtml(valueText)}</strong>
+      <span class="stat-record-sub">${escapeHtml(subText)}</span>
+    </button>
+  `;
+}
+
+function renderDailySvg(daily) {
+  if (!daily?.length) {
+    return `<p class="stats-loading">Sin actividad diaria registrada en este período.</p>`;
+  }
+  const W = 420;
+  const H = 120;
+  const padB = 8;
+  const maxCount = Math.max(1, ...daily.map((d) => d.count));
+  const barSlot = W / daily.length;
+  const barW = Math.max(4, barSlot - 3);
+
+  const bars = daily
+    .map((d, i) => {
+      const barH = Math.max(4, (d.count / maxCount) * (H - padB - 14));
+      const x = (i * barSlot + (barSlot - barW) / 2).toFixed(1);
+      const y = (H - padB - barH).toFixed(1);
+      const color = d.felt_count > 0 ? "var(--felt)" : "var(--accent)";
+      return `<rect x="${x}" y="${y}" width="${barW.toFixed(1)}" height="${barH.toFixed(1)}" rx="2.5" fill="${color}" opacity="0.88">
+        <title>${formatDayShort(d.day)}: ${d.count} sismo(s) · Máx M${Number(d.max_magnitude).toFixed(1)}${d.felt_count ? ` · ${d.felt_count} sentido(s)` : ""}</title>
+      </rect>`;
+    })
+    .join("");
+
+  return `
+    <svg class="daily-chart-svg" viewBox="0 0 ${W} ${H}" role="img" aria-label="Sismos por día en el período seleccionado">
+      <line x1="0" y1="${H - padB}" x2="${W}" y2="${H - padB}" stroke="var(--border)" stroke-width="1"/>
+      ${bars}
+    </svg>
+    <div class="daily-axis">
+      <span>${formatDayShort(daily[0].day)}</span>
+      <span>Pico: ${maxCount} sismos/día</span>
+      <span>${formatDayShort(daily[daily.length - 1].day)}</span>
+    </div>
+  `;
+}
+
+async function fetchAndRenderStats() {
+  const days = document.getElementById("stats-days-select")?.value ?? "";
+  const body = document.getElementById("stats-body");
+  const metaEl = document.getElementById("stats-archive-meta");
+  if (!body) return;
+
+  body.innerHTML = `<p class="stats-loading">Calculando estadísticas desde D1…</p>`;
+  const params = new URLSearchParams();
+  if (days) params.set("days", days);
+
+  const res = await fetch(`/api/stats?${params.toString()}`);
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const data = await res.json();
+
+  if (metaEl) {
+    const totalArch = data.archive?.total_count ?? 0;
+    const since = formatArchiveDate(data.archive?.first_occurred_at);
+    metaEl.textContent = `Archivo acumulado D1: ${totalArch} sismos guardados desde ${since}`;
+  }
+
+  const s = data.summary || {};
+  const total = s.total_count || 0;
+  const feltPct = total ? ((s.felt_count / total) * 100).toFixed(1) : "0.0";
+  const rec = data.records || {};
+  const provs = data.by_province || [];
+  const maxProvCount = Math.max(1, ...provs.map((p) => p.count));
+  const distMag = data.distribution?.magnitude || {};
+  const distDepth = data.distribution?.depth || {};
+
+  const provRowsHtml = provs.length
+    ? provs
+        .map((p, idx) => {
+          const pct = Math.max(6, (p.count / maxProvCount) * 100).toFixed(1);
+          return `
+            <li>
+              <button type="button" class="province-rank-btn" data-filter-province="${escapeHtml(p.province)}" title="Filtrar mapa y lista por ${escapeHtml(p.province)}">
+                <span class="prov-rank-idx">#${idx + 1}</span>
+                <span class="prov-rank-main">
+                  <span class="prov-rank-name">${escapeHtml(p.province)}</span>
+                  <span class="prov-bar-track"><span class="prov-bar-fill" style="width:${pct}%"></span></span>
+                </span>
+                <span class="prov-rank-meta">
+                  <strong>${p.count}</strong>
+                  <span>Máx M${Number(p.max_magnitude).toFixed(1)}${p.felt_count ? ` · ${p.felt_count} sent.` : ""}</span>
+                </span>
+              </button>
+            </li>
+          `;
+        })
+        .join("")
+    : `<li style="color:var(--muted);font-size:0.78rem;">No hay eventos en el período seleccionado.</li>`;
+
+  body.innerHTML = `
+    <section class="stats-records-grid" aria-label="Récords y resumen del período">
+      <div class="stat-record-card">
+        <span class="stat-record-label">Eventos en período</span>
+        <strong class="stat-record-value">${total}</strong>
+        <span class="stat-record-sub">${s.felt_count || 0} sentidos (${feltPct}%) · ${s.prelim_count || 0} prelim.</span>
+      </div>
+      ${renderRecordCard(
+        "Mayor magnitud",
+        rec.strongest,
+        rec.strongest ? `M${Number(rec.strongest.magnitude).toFixed(1)}` : "—",
+        rec.strongest ? `${rec.strongest.province} · ${rec.strongest.local_date}` : ""
+      )}
+      ${renderRecordCard(
+        "Mayor profundidad",
+        rec.deepest,
+        rec.deepest ? `${rec.deepest.depth_km} km` : "—",
+        rec.deepest ? `${rec.deepest.province} · M${Number(rec.deepest.magnitude).toFixed(1)}` : ""
+      )}
+      ${renderRecordCard(
+        "Último sentido",
+        rec.latest_felt,
+        rec.latest_felt ? `M${Number(rec.latest_felt.magnitude).toFixed(1)}` : "—",
+        rec.latest_felt ? `${rec.latest_felt.province} · ${rec.latest_felt.local_date}` : ""
+      )}
+    </section>
+
+    <div class="stats-columns">
+      <section class="stats-card" aria-label="Ranking por provincia">
+        <div class="stats-card-head">
+          <h3>Ranking por provincia</h3>
+          <span>Tocá una para filtrar el mapa</span>
+        </div>
+        <ul class="province-rank-list">${provRowsHtml}</ul>
+      </section>
+
+      <div style="display:flex;flex-direction:column;gap:14px;">
+        <section class="stats-card" aria-label="Actividad diaria">
+          <div class="stats-card-head">
+            <h3>Actividad diaria</h3>
+            <span>Rojo: días con sismos sentidos</span>
+          </div>
+          ${renderDailySvg(data.daily)}
+        </section>
+
+        <section class="stats-card" aria-label="Distribución por magnitud y profundidad">
+          <div class="stats-card-head">
+            <h3>Distribución sísmica</h3>
+            <span>Prof. media: ${s.avg_depth_km ?? "—"} km</span>
+          </div>
+          <div class="dist-group">
+            <h4>Por magnitud</h4>
+            <div class="dist-pills">
+              <div class="dist-pill"><span>M &lt; 3.0</span><strong>${distMag.lt3 ?? 0}</strong></div>
+              <div class="dist-pill"><span>M 3.0–3.9</span><strong>${distMag.r3_4 ?? 0}</strong></div>
+              <div class="dist-pill"><span>M 4.0–4.9</span><strong>${distMag.r4_5 ?? 0}</strong></div>
+              <div class="dist-pill"><span>M &ge; 5.0</span><strong>${distMag.gte5 ?? 0}</strong></div>
+            </div>
+          </div>
+          <div class="dist-group">
+            <h4>Por profundidad</h4>
+            <div class="dist-pills">
+              <div class="dist-pill"><span>Superficial (&lt;70 km)</span><strong>${distDepth.shallow ?? 0}</strong></div>
+              <div class="dist-pill"><span>Intermedio (70–300)</span><strong>${distDepth.intermediate ?? 0}</strong></div>
+              <div class="dist-pill"><span>Profundo (&gt;300 km)</span><strong>${distDepth.deep ?? 0}</strong></div>
+            </div>
+          </div>
+        </section>
+      </div>
+    </div>
+  `;
+
+  body.querySelectorAll("[data-filter-province]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const prov = btn.dataset.filterProvince;
+      const dialog = document.getElementById("stats-dialog");
+      // Sync time window if dialog was widened beyond current feed window
+      const statsDays = document.getElementById("stats-days-select")?.value;
+      const daysSelect = document.getElementById("days-select");
+      if (daysSelect && statsDays !== undefined) {
+        daysSelect.value = statsDays;
+      }
+      closeTopLayer(dialog);
+      setProvinceFilter(prov, true).catch(console.error);
+    });
+  });
+
+  body.querySelectorAll("[data-jump-id]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const id = btn.dataset.jumpId;
+      const lon = Number(btn.dataset.lon);
+      const lat = Number(btn.dataset.lat);
+      const dialog = document.getElementById("stats-dialog");
+      closeTopLayer(dialog);
+
+      // Ensure event is in range if not currently loaded
+      const exists = state.allFeatures.some((f) => f.properties.id === id);
+      if (!exists) {
+        const daysSelect = document.getElementById("days-select");
+        if (daysSelect) daysSelect.value = "";
+        setProvinceFilter(null, false)
+          .then(() => selectEvent(id, true))
+          .catch(console.error);
+      } else {
+        selectEvent(id, true);
+      }
+      if (map && Number.isFinite(lon) && Number.isFinite(lat)) {
+        map.flyTo({
+          center: [lon, lat],
+          zoom: Math.max(map.getZoom(), 7.2),
+          duration: reducedMotionQuery.matches ? 0 : 900,
+        });
+      }
+    });
+  });
+}
+
 function escapeHtml(str) {
   return String(str ?? "")
     .replaceAll("&", "&amp;")
@@ -972,6 +1459,7 @@ function escapeHtml(str) {
 
 async function boot() {
   syncResponsiveMode();
+  installHudLayoutObserver();
   await ensureTemporal();
   installToolbarRovingFallback();
   installRangeProgressFallback();
